@@ -71,9 +71,6 @@ class SerialBridgeNode(Node):
             self.ser.write(data_to_send.encode('utf-8'))
             self.get_logger().debug(f"Отправлено в UART: {data_to_send.strip()}")
 
-            # Если бы использовался UInt8MultiArray:
-            # data_to_send = bytes(msg.data)
-            # self.ser.write(data_to_send)
         except Exception as e:
             self.get_logger().error(f"Ошибка записи в последовательный порт: {e}")
 
@@ -82,6 +79,10 @@ class SerialBridgeNode(Node):
         Работа в отдельном потоке: чтение данных из последовательного порта
         и публикация их в топик ROS.
         """
+        # Буфер для накопления данных между вызовами
+        if not hasattr(self, 'serial_buffer'):
+            self.serial_buffer = ''
+        
         while self.running and rclpy.ok():
             try:
                 # Чтение всех доступных данных или ожидание по таймауту
@@ -91,18 +92,55 @@ class SerialBridgeNode(Node):
 
                     # Вариант 1: Публикация как String (удобно для текста)
                     try:
-                        data_str = data_bytes.decode('utf-8', errors='ignore').strip()
-                        ros_msg = String()
-                        ros_msg.data = data_str
-                        self.pub_to_ros.publish(ros_msg)
-                        self.get_logger().debug(f"Получено из UART (String): {data_str}")
+                        data_str = data_bytes.decode('utf-8', errors='ignore')
+                        self.serial_buffer += data_str
+                        
+                        # Обрабатываем все полные сообщения в буфере
+                        while True:
+                            # Ищем начало сообщения
+                            start_index = self.serial_buffer.find('$')
+                            if start_index == -1:
+                                # Сообщение не начинается, очищаем буфер
+                                self.serial_buffer = ''
+                                break
+                            
+                            # Ищем конец сообщения после начала
+                            end_index = self.serial_buffer.find('#', start_index + 1)
+                            if end_index == -1:
+                                # Сообщение не завершено, оставляем в буфере все после последнего $
+                                self.serial_buffer = self.serial_buffer[start_index:]
+                                break
+                            
+                            # Извлекаем полное сообщение
+                            full_message = self.serial_buffer[start_index:end_index + 1]
+                            
+                            # Проверяем формат сообщения (должно быть $ в начале и # в конце)
+                            if full_message.startswith('$') and full_message.endswith('#'):
+                                # Извлекаем текст между $ и #
+                                message_text = full_message.strip()
+                                
+                                # Публикуем извлеченный текст
+                                ros_msg = String()
+                                ros_msg.data = message_text
+                                self.pub_to_ros.publish(ros_msg)
+                                self.get_logger().debug(f"Получено полное сообщение: {full_message} -> {message_text}")
+                            else:
+                                self.get_logger().warn(f"Некорректный формат сообщения: {full_message}")
+                            
+                            # Удаляем обработанное сообщение из буфера
+                            remaining_data = self.serial_buffer[end_index + 1:]
+                            self.serial_buffer = remaining_data
+                            
+                            # Если в оставшемся буфере нет данных, выходим из цикла
+                            if not self.serial_buffer:
+                                break
+
                     except UnicodeDecodeError:
                         self.get_logger().warn("Не удалось декодировать данные в UTF-8.")
 
             except serial.SerialException as e:
                 self.get_logger().error(f"Ошибка чтения из последовательного порта: {e}")
                 break
-            # time.sleep(0.001)  # Короткая пауза, чтобы не нагружать CPU
 
     def destroy_node(self):
         """
