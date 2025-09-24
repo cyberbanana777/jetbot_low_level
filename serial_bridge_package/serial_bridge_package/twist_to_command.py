@@ -1,5 +1,23 @@
 #!/usr/bin/env python3
 
+# Copyright (c) 2025 Alice Zenina and Alexander Grachev RTU MIREA (Russia)
+# SPDX-License-Identifier: MIT
+# Details in the LICENSE file in the root of the package.
+
+'''
+АННОТАЦИЯ
+Конвертер сообщений Twist в кастомный протокол для ESP32 с форматом
+$linear;angular#. Извлекает только линейную скорость по X и угловую
+по Z, игнорируя остальные компоненты. Использует стандартный топик
+/cmd_vel для совместимости с ROS-навигационными стеками.
+
+ANNOTATION
+Twist message converter to custom ESP32 protocol in $linear;angular# format.
+Extracts only linear X and angular Z velocities while ignoring other
+components. Uses standard /cmd_vel topic for compatibility with ROS navigation
+stacks.
+'''
+
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist

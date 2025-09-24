@@ -1,3 +1,7 @@
+# Copyright (c) 2025 Alice Zenina and Alexander Grachev RTU MIREA (Russia)
+# SPDX-License-Identifier: MIT
+# Details in the LICENSE file in the root of the package.
+
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
@@ -40,7 +44,9 @@ def generate_launch_description():
         namespace='low_level',
         parameters=[{
             'frame_id': 'odom',
-            'child_frame_id': 'base_link'
+            'child_frame_id': 'base_link',
+            'left_wheel_frame_id': 'left_wheel',
+            'right_wheel_frame_id': 'right_wheel',
         }],
         output='screen',
         remappings=[

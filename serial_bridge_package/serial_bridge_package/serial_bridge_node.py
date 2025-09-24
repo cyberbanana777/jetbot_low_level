@@ -1,5 +1,25 @@
 #!/usr/bin/env python3
 
+# Copyright (c) 2025 Alice Zenina and Alexander Grachev RTU MIREA (Russia)
+# SPDX-License-Identifier: MIT
+# Details in the LICENSE file in the root of the package.
+
+'''
+АННОТАЦИЯ
+ROS2-мост для двунаправленной связи между UART-устройствами и ROS-топиками с
+буферизацией и парсингом сообщений в формате $message#. Использует
+многопоточность для асинхронного чтения порта, поддерживает настраиваемые
+параметры подключения. Требует прав доступа к последовательному порту и
+стабильного соединения с устройством.
+
+ANNOTATION
+ROS2 bridge for bidirectional communication between UART devices and ROS
+topics with message buffering and parsing in $message# format. Uses
+multithreading for asynchronous port reading, supports configurable
+connection parameters. Requires serial port access privileges and stable
+device connection.
+'''
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -8,7 +28,9 @@ import threading
 
 
 class SerialBridgeNode(Node):
-    """ROS2 node for bridging between ROS2 topics and serial port communication."""
+    """
+    ROS2 node for bridging between ROS2 topics and serial port communication.
+    """
 
     def __init__(self):
         super().__init__('serial_bridge_node')
@@ -32,7 +54,9 @@ class SerialBridgeNode(Node):
                 baudrate=baudrate,
                 timeout=0.5  # Read timeout in seconds
             )
-            self.get_logger().info(f"Serial port {serial_port} opened at {baudrate} baud")
+            self.get_logger().info(
+                f"Serial port {serial_port} opened at {baudrate} baud"
+                )
         except serial.SerialException as e:
             self.get_logger().error(f"Error opening port {serial_port}: {e}")
             raise e
@@ -59,7 +83,10 @@ class SerialBridgeNode(Node):
         self.get_logger().info("Serial bridge node started. Waiting for data...")
 
     def ros_callback(self, msg):
-        """Callback for messages received from ROS topic. Sends data to serial port."""
+        """
+        Callback for messages received from ROS topic. Sends data to
+        serial port.
+        """
         try:
             data_to_send = msg.data
             self.ser.write(data_to_send.encode('utf-8'))
@@ -68,7 +95,9 @@ class SerialBridgeNode(Node):
             self.get_logger().error(f"Error writing to serial port: {e}")
 
     def read_from_serial(self):
-        """Worker thread: reads data from serial port and publishes to ROS topic."""
+        """
+        Worker thread: reads data from serial port and publishes to ROS topic.
+        """
         # Buffer for accumulating data between reads
         if not hasattr(self, 'serial_buffer'):
             self.serial_buffer = ''
@@ -127,7 +156,9 @@ class SerialBridgeNode(Node):
                                 break
 
                     except UnicodeDecodeError:
-                        self.get_logger().warning("Failed to decode data as UTF-8")
+                        self.get_logger().warning(
+                            "Failed to decode data as UTF-8"
+                            )
 
             except serial.SerialException as e:
                 self.get_logger().error(f"Error reading from serial port: {e}")
@@ -156,7 +187,9 @@ def main(args=None):
     try:
         rclpy.spin(serial_bridge_node)
     except KeyboardInterrupt:
-        serial_bridge_node.get_logger().info("Serial bridge-node stopped by user (Ctrl+C)")
+        serial_bridge_node.get_logger().info(
+            "Serial bridge-node stopped by user (Ctrl+C)"
+            )
     finally:
         serial_bridge_node.destroy_node()
         rclpy.shutdown()
