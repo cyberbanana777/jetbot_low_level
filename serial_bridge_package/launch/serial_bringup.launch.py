@@ -3,7 +3,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     
-    # Нода преобразования Twist в команды для ESP32
+    # Node-converter Twist to commands for ESP32
     twist_to_command = Node(
         package='serial_bridge_package',
         executable='twist_to_command',
@@ -16,6 +16,7 @@ def generate_launch_description():
         ],
     )
 
+    # Node-bridge between ROS and ESP32 thought serial
     bridge_node = Node(
         package='serial_bridge_package',
         executable='serial_bridge_node',
@@ -31,7 +32,7 @@ def generate_launch_description():
         }],
     )
     
-    # Нода обработки обратной связи от ESP32
+    # Node processor feedback from ESP32
     feedback_node = Node(
         package='serial_bridge_package',
         executable='feedback_processor',

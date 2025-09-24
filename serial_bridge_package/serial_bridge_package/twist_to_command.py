@@ -5,56 +5,62 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 
+
 class TwistToCommand(Node):
+    """Node for converting Twist messages to custom ESP32 command protocol."""
+
     def __init__(self):
         super().__init__('twist_to_command')
         
-        # Подписка на топик Twist (управление движением)
+        # Subscription to Twist topic (movement control)
         self.subscription = self.create_subscription(
             Twist,
-            '/cmd_vel',  # Стандартный топик для управления движением
+            '/cmd_vel',  # Standard topic for movement control
             self.twist_callback,
             10
         )
         
-        # Публикатор в топик для отправки на ESP32
+        # Publisher for ESP32 communication topic
         self.publisher = self.create_publisher(
             String,
-            '/esp32_input',  # Топик, из которого ваша нода берет данные для отправки на ESP32
+            '/esp32_input',  # Topic used for sending data to ESP32
             10
         )
         
-        self.get_logger().info('Нода twist_to_command запущена. Ожидание команд Twist...')
-    
+        self.get_logger().info(
+            'Twist-to-command node started. Waiting for Twist commands...'
+        )
+
     def twist_callback(self, msg):
-        """Преобразование сообщения Twist в строку команды для ESP32"""
-        # Извлекаем линейную и угловую скорости
-        x_linear_velocity = msg.linear.x
-        z_angular_velocity = msg.angular.z
+        """Convert Twist message to ESP32 command string."""
+        # Extract linear and angular velocities
+        linear_x = msg.linear.x
+        angular_z = msg.angular.z
         
-        # Форматируем сообщение согласно протоколу
-        command = f"${x_linear_velocity:.3f};{z_angular_velocity:.3f}#"
+        # Format message according to protocol
+        command = f"${linear_x:.3f};{angular_z:.3f}#"
         
-        # Создаем и публикуем сообщение String
+        # Create and publish String message
         string_msg = String()
         string_msg.data = command
         
         self.publisher.publish(string_msg)
-        self.get_logger().debug(f'Отправлена команда: {command}')
+        self.get_logger().debug(f'Sent command: {command}')
 
 
 def main(args=None):
+    """Main function to initialize and run the node."""
     rclpy.init(args=args)
-    
     node = TwistToCommand()
     
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        node.get_logger().info('Нода twist_to_command остановлена')
+        node.get_logger().info('Twist-to-command node stopped')
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

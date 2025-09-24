@@ -1,171 +1,166 @@
 #!/usr/bin/env python3
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 import serial
 import threading
 
+
 class SerialBridgeNode(Node):
-    """
-    Узел ROS2 для моста между топиками ROS2 и последовательным портом.
-    """
+    """ROS2 node for bridging between ROS2 topics and serial port communication."""
 
     def __init__(self):
         super().__init__('serial_bridge_node')
 
-        # Объявление параметров для настройки порта
+        # Declare parameters for port configuration
         self.declare_parameter('serial_port', '/dev/ttyUSB0')
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('ros_out_topic', 'serial/from')
         self.declare_parameter('ros_in_topic', 'serial/to')
 
-        # Получение значений параметров
+        # Get parameter values
         serial_port = self.get_parameter('serial_port').get_parameter_value().string_value
         baudrate = self.get_parameter('baudrate').get_parameter_value().integer_value
         ros_out_topic = self.get_parameter('ros_out_topic').get_parameter_value().string_value
         ros_in_topic = self.get_parameter('ros_in_topic').get_parameter_value().string_value
 
-        # Инициализация последовательного порта
+        # Initialize serial port
         try:
             self.ser = serial.Serial(
                 port=serial_port,
                 baudrate=baudrate,
-                timeout=0.5  # Таймаут для чтения (в секундах)
+                timeout=0.5  # Read timeout in seconds
             )
-            self.get_logger().info(f"Последовательный порт {serial_port} открыт на скорости {baudrate}")
+            self.get_logger().info(f"Serial port {serial_port} opened at {baudrate} baud")
         except serial.SerialException as e:
-            self.get_logger().error(f"Ошибка открытия порта {serial_port}: {e}")
+            self.get_logger().error(f"Error opening port {serial_port}: {e}")
             raise e
 
-        # Создание Publisher для отправки данных ИЗ последовательного порта В ROS
-        # Данные можно публиковать как String или как байты (UInt8MultiArray)
+        # Create Publisher for sending data FROM serial port TO ROS
         self.pub_to_ros = self.create_publisher(String, ros_out_topic, 10)
-        # self.pub_to_ros = self.create_publisher(UInt8MultiArray, ros_out_topic, 10) # Альтернатива для байт
 
-        # Создание Subscriber для приема данных ИЗ ROS и отправки В последовательный порт
+        # Create Subscriber for receiving data FROM ROS and sending TO serial port
         self.sub_from_ros = self.create_subscription(
             String,
             ros_in_topic,
             self.ros_callback,
-            10)
-        # Аналогично, можно подписаться на UInt8MultiArray, если нужна отправка сырых байт
+            10
+        )
 
-        # Флаг для управления рабочими потоками
+        # Flag for controlling worker threads
         self.running = True
 
-        # Запуск потока для чтения из последовательного порта
+        # Start thread for reading from serial port
         self.read_thread = threading.Thread(target=self.read_from_serial)
-        self.read_thread.daemon = True  # Поток завершится при завершении главного
+        self.read_thread.daemon = True  # Thread will exit when main thread exits
         self.read_thread.start()
 
-        self.get_logger().info("Узел моста последовательного порта запущен. Ожидание данных...")
+        self.get_logger().info("Serial bridge node started. Waiting for data...")
 
     def ros_callback(self, msg):
-        """
-        Callback для сообщений, полученных из топика ROS.
-        Отправляет данные в последовательный порт.
-        """
+        """Callback for messages received from ROS topic. Sends data to serial port."""
         try:
-            # Если используется String
-            data_to_send = msg.data   # Добавляем символ новой строки как маркер конца сообщения
+            data_to_send = msg.data
             self.ser.write(data_to_send.encode('utf-8'))
-            self.get_logger().debug(f"Отправлено в UART: {data_to_send.strip()}")
-
+            self.get_logger().debug(f"Sent to UART: {data_to_send.strip()}")
         except Exception as e:
-            self.get_logger().error(f"Ошибка записи в последовательный порт: {e}")
+            self.get_logger().error(f"Error writing to serial port: {e}")
 
     def read_from_serial(self):
-        """
-        Работа в отдельном потоке: чтение данных из последовательного порта
-        и публикация их в топик ROS.
-        """
-        # Буфер для накопления данных между вызовами
+        """Worker thread: reads data from serial port and publishes to ROS topic."""
+        # Buffer for accumulating data between reads
         if not hasattr(self, 'serial_buffer'):
             self.serial_buffer = ''
         
         while self.running and rclpy.ok():
             try:
-                # Чтение всех доступных данных или ожидание по таймауту
+                # Read all available data or wait for timeout
                 if self.ser.in_waiting > 0:
-                    # Чтение байтов
                     data_bytes = self.ser.read(self.ser.in_waiting)
 
-                    # Вариант 1: Публикация как String (удобно для текста)
                     try:
                         data_str = data_bytes.decode('utf-8', errors='ignore')
                         self.serial_buffer += data_str
                         
-                        # Обрабатываем все полные сообщения в буфере
+                        # Process all complete messages in buffer
                         while True:
-                            # Ищем начало сообщения
+                            # Find message start
                             start_index = self.serial_buffer.find('$')
                             if start_index == -1:
-                                # Сообщение не начинается, очищаем буфер
+                                # No message start found, clear buffer
                                 self.serial_buffer = ''
                                 break
                             
-                            # Ищем конец сообщения после начала
+                            # Find message end after start
                             end_index = self.serial_buffer.find('#', start_index + 1)
                             if end_index == -1:
-                                # Сообщение не завершено, оставляем в буфере все после последнего $
+                                # Message not complete, keep everything after last $ in buffer
                                 self.serial_buffer = self.serial_buffer[start_index:]
                                 break
                             
-                            # Извлекаем полное сообщение
+                            # Extract complete message
                             full_message = self.serial_buffer[start_index:end_index + 1]
                             
-                            # Проверяем формат сообщения (должно быть $ в начале и # в конце)
+                            # Validate message format (must start with $ and end with #)
                             if full_message.startswith('$') and full_message.endswith('#'):
-                                # Извлекаем текст между $ и #
                                 message_text = full_message.strip()
                                 
-                                # Публикуем извлеченный текст
+                                # Publish extracted text
                                 ros_msg = String()
                                 ros_msg.data = message_text
                                 self.pub_to_ros.publish(ros_msg)
-                                self.get_logger().debug(f"Получено полное сообщение: {full_message} -> {message_text}")
+                                self.get_logger().debug(
+                                    f"Received complete message: {full_message} -> {message_text}"
+                                )
                             else:
-                                self.get_logger().warn(f"Некорректный формат сообщения: {full_message}")
+                                self.get_logger().warning(
+                                    f"Invalid message format: {full_message}"
+                                )
                             
-                            # Удаляем обработанное сообщение из буфера
+                            # Remove processed message from buffer
                             remaining_data = self.serial_buffer[end_index + 1:]
                             self.serial_buffer = remaining_data
                             
-                            # Если в оставшемся буфере нет данных, выходим из цикла
+                            # Exit loop if no data left in buffer
                             if not self.serial_buffer:
                                 break
 
                     except UnicodeDecodeError:
-                        self.get_logger().warn("Не удалось декодировать данные в UTF-8.")
+                        self.get_logger().warning("Failed to decode data as UTF-8")
 
             except serial.SerialException as e:
-                self.get_logger().error(f"Ошибка чтения из последовательного порта: {e}")
+                self.get_logger().error(f"Error reading from serial port: {e}")
                 break
 
     def destroy_node(self):
-        """
-        Корректное завершение работы при остановке узла.
-        """
-        self.get_logger().info("Завершение работы узла моста...")
+        """Cleanup when node is stopped."""
+        self.get_logger().info("Shutting down serial bridge node...")
         self.running = False
+        
         if self.read_thread.is_alive():
             self.read_thread.join(timeout=1.0)
+        
         if self.ser and self.ser.is_open:
             self.ser.close()
-            self.get_logger().info("Последовательный порт закрыт.")
+            self.get_logger().info("Serial port closed.")
+        
         super().destroy_node()
 
+
 def main(args=None):
+    """Main function to initialize and run the node."""
     rclpy.init(args=args)
     serial_bridge_node = SerialBridgeNode()
 
     try:
         rclpy.spin(serial_bridge_node)
     except KeyboardInterrupt:
-        serial_bridge_node.get_logger().info("Узел остановлен пользователем (Ctrl+C).")
+        serial_bridge_node.get_logger().info("Serial bridge-node stopped by user (Ctrl+C)")
     finally:
         serial_bridge_node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
